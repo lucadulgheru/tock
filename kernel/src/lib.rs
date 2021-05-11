@@ -96,6 +96,7 @@ pub mod debug;
 pub mod hil;
 pub mod introspection;
 pub mod ipc;
+pub mod process;
 pub mod syscall;
 
 mod config;
@@ -105,7 +106,7 @@ mod grant;
 mod mem;
 mod memop;
 mod platform;
-mod process;
+// mod process;
 mod process_policies;
 mod process_standard;
 mod process_utilities;
@@ -128,21 +129,3 @@ pub use crate::sched::priority::PrioritySched;
 pub use crate::sched::round_robin::{RoundRobinProcessNode, RoundRobinSched};
 pub use crate::sched::{Kernel, Scheduler};
 pub use crate::upcall::Upcall;
-
-// Export only select items from the process module. To remove the name conflict
-// this cannot be called `process`, so we use a shortened version. These
-// functions and types are used by board files to setup the platform and setup
-// processes.
-/// Publicly available process-related objects.
-pub mod procs {
-    pub use crate::process::{
-        Error, FaultAction, FunctionCall, FunctionCallSource, Process, State, Task,
-    };
-    pub use crate::process_policies::{
-        PanicFaultPolicy, ProcessFaultPolicy, RestartFaultPolicy, StopFaultPolicy,
-        StopWithDebugFaultPolicy, ThresholdRestartFaultPolicy,
-        ThresholdRestartThenPanicFaultPolicy,
-    };
-    pub use crate::process_standard::ProcessStandard;
-    pub use crate::process_utilities::{load_processes, ProcessLoadError};
-}

@@ -10,7 +10,7 @@ use core::mem::MaybeUninit;
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use kernel::component::Component;
 use kernel::hil::time;
-use kernel::procs::Process;
+use kernel::process::Process;
 use kernel::static_init_half;
 use kernel::{MLFQProcessNode, MLFQSched};
 

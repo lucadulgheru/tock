@@ -145,8 +145,8 @@ impl<'a, U: usb_hid::UsbHid<'a, [u8; 64]>> usb_hid::Client<'a, [u8; 64]> for Cta
                     app.can_receive.set(false);
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {}
                 })
         });
@@ -166,8 +166,8 @@ impl<'a, U: usb_hid::UsbHid<'a, [u8; 64]>> usb_hid::Client<'a, [u8; 64]> for Cta
                     app.callback.schedule(1, 0, 0);
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {}
                 })
         });

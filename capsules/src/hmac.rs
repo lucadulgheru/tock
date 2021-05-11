@@ -227,8 +227,8 @@ impl<'a, H: digest::Digest<'a, T> + digest::HMACSha256, T: DigestType> digest::C
                     }
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {
                         self.appid.clear();
                         self.check_queue();
@@ -263,8 +263,8 @@ impl<'a, H: digest::Digest<'a, T> + digest::HMACSha256, T: DigestType> digest::C
                     self.check_queue();
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {
                         self.appid.clear();
                         self.check_queue();

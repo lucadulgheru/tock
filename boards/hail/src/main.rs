@@ -38,7 +38,7 @@ mod test_take_map_cell;
 const NUM_PROCS: usize = 20;
 
 // Actual memory for holding the active process structures.
-static mut PROCESSES: [Option<&'static dyn kernel::procs::Process>; NUM_PROCS] = [None; NUM_PROCS];
+static mut PROCESSES: [Option<&'static dyn kernel::process::Process>; NUM_PROCS] = [None; NUM_PROCS];
 
 static mut CHIP: Option<&'static sam4l::chip::Sam4l<Sam4lDefaultPeripherals>> = None;
 
@@ -415,8 +415,8 @@ pub unsafe fn main() {
 
     // Configure application fault policy
     let fault_policy = static_init!(
-        kernel::procs::ThresholdRestartThenPanicFaultPolicy,
-        kernel::procs::ThresholdRestartThenPanicFaultPolicy::new(4)
+        kernel::process::ThresholdRestartThenPanicFaultPolicy,
+        kernel::process::ThresholdRestartThenPanicFaultPolicy::new(4)
     );
 
     let hail = Hail {
@@ -460,7 +460,7 @@ pub unsafe fn main() {
         static _eappmem: u8;
     }
 
-    kernel::procs::load_processes(
+    kernel::process::load_processes(
         board_kernel,
         chip,
         core::slice::from_raw_parts(

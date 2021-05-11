@@ -14,7 +14,7 @@
 
 use core::mem::MaybeUninit;
 use kernel::component::Component;
-use kernel::procs::Process;
+use kernel::process::Process;
 use kernel::{static_init, static_init_half};
 use kernel::{RoundRobinProcessNode, RoundRobinSched};
 

@@ -15,6 +15,18 @@ use crate::sched::Kernel;
 use crate::syscall::{self, Syscall, SyscallReturn};
 use crate::upcall::UpcallId;
 
+// Export only select items from the process module. To remove the name conflict
+// this cannot be called `process`, so we use a shortened version. These
+// functions and types are used by board files to setup the platform and setup
+// processes.
+/// Publicly available process-related objects.
+pub use crate::process_policies::{
+    PanicFaultPolicy, ProcessFaultPolicy, RestartFaultPolicy, StopFaultPolicy,
+    StopWithDebugFaultPolicy, ThresholdRestartFaultPolicy, ThresholdRestartThenPanicFaultPolicy,
+};
+pub use crate::process_standard::ProcessStandard;
+pub use crate::process_utilities::{load_processes, ProcessLoadError};
+
 /// Userspace process identifier.
 ///
 /// This should be treated as an opaque type that can be used to represent a
