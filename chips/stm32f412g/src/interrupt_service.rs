@@ -1,10 +1,12 @@
 use crate::stm32f412g_nvic;
+use crate::usb_otg;
 use stm32f4xx::chip::Stm32f4xxDefaultPeripherals;
 use stm32f4xx::deferred_calls::DeferredCallTask;
 
 pub struct Stm32f412gDefaultPeripherals<'a> {
     pub stm32f4: Stm32f4xxDefaultPeripherals<'a>,
     // Once implemented, place Stm32f412g specific peripherals here
+    pub usb_otg: usb_otg::Usbotg<'a>,
     pub trng: stm32f4xx::trng::Trng<'a>,
 }
 
@@ -16,6 +18,7 @@ impl<'a> Stm32f412gDefaultPeripherals<'a> {
     ) -> Self {
         Self {
             stm32f4: Stm32f4xxDefaultPeripherals::new(rcc, exti, dma),
+            usb_otg: usb_otg::Usbotg::new(rcc),
             trng: stm32f4xx::trng::Trng::new(rcc),
         }
     }
@@ -31,7 +34,15 @@ impl<'a> kernel::InterruptService<DeferredCallTask> for Stm32f412gDefaultPeriphe
             stm32f412g_nvic::RNG => {
                 self.trng.handle_interrupt();
                 true
-            }
+            },
+            stm32f412g_nvic::OTG_FS =>{
+                self.usb_otg.handle_interrupt();
+                true
+            },
+            // stm32f412g_nvic::OTG_FS_WKUP =>{
+            //     self.usb_otg.handle_interrupt();
+            //     true
+            // },
             _ => self.stm32f4.service_interrupt(interrupt),
         }
     }

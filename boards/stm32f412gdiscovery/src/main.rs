@@ -19,6 +19,7 @@ use kernel::hil::screen::ScreenRotation;
 use kernel::Platform;
 use kernel::{create_capability, debug, static_init};
 use stm32f412g::interrupt_service::Stm32f412gDefaultPeripherals;
+use kernel::hil::usb::Client;
 
 /// Support routines for debugging I/O.
 pub mod io;
@@ -334,6 +335,44 @@ unsafe fn set_pin_primary_functions(
     gpio_ports.get_pin(PinId::PG04).map(|pin| {
         pin.make_input();
     });
+
+    // USB
+    gpio_ports.get_pin(PinId::PA11).map(|pin| {
+        // pin.make_output();
+        pin.set_mode_output_pushpull();
+        pin.set_mode(stm32f412g::gpio::Mode::AlternateFunctionMode);
+        pin.set_speed();
+        pin.set_floating_state(gpio::FloatingState::PullNone);
+        // AF10 is USB
+        pin.set_alternate_function(stm32f412g::gpio::AlternateFunction::AF10);
+    });
+    gpio_ports.get_pin(PinId::PA12).map(|pin| {
+        // pin.make_output();
+        pin.set_mode_output_pushpull();
+        pin.set_mode(stm32f412g::gpio::Mode::AlternateFunctionMode);
+        pin.set_speed();
+        pin.set_floating_state(gpio::FloatingState::PullNone);
+        // AF10 is USB
+        pin.set_alternate_function(stm32f412g::gpio::AlternateFunction::AF10);
+    });
+    gpio_ports.get_pin(PinId::PA09).map(|pin| {
+        // pin.make_output();
+        pin.set_mode(stm32f412g::gpio::Mode::Input);
+        pin.set_floating_state(gpio::FloatingState::PullNone);
+    });
+    gpio_ports.get_pin(PinId::PA10).map(|pin| {
+        // pin.make_output();
+        pin.set_mode_output_opendrain();
+        pin.set_mode(stm32f412g::gpio::Mode::AlternateFunctionMode);
+        pin.set_floating_state(gpio::FloatingState::PullUp);
+        // AF10 is USB
+        pin.set_alternate_function(stm32f412g::gpio::AlternateFunction::AF10);
+    });
+    gpio_ports.get_pin(PinId::PG08).map(|pin| {
+        // pin.make_output();
+        pin.set_mode_output_opendrain();
+        pin.set_floating_state(gpio::FloatingState::PullNone);
+    });
 }
 
 /// Helper function for miscellaneous peripheral functions
@@ -341,7 +380,13 @@ unsafe fn setup_peripherals(
     tim2: &stm32f412g::tim2::Tim2,
     fsmc: &stm32f412g::fsmc::Fsmc,
     trng: &stm32f412g::trng::Trng,
+    usb_otg: &stm32f412g::usb_otg::Usbotg
 ) {
+    
+    usb_otg.enable_clock();
+    // USB_OTG IRQn is 67
+    cortexm4::nvic::Nvic::new(stm32f412g::nvic::OTG_FS).enable();
+
     // USART2 IRQn is 38
     cortexm4::nvic::Nvic::new(stm32f412g::nvic::USART2).enable();
 
@@ -368,6 +413,8 @@ unsafe fn get_peripherals() -> (
     &'static stm32f412g::dma1::Dma1<'static>,
 ) {
     let rcc = static_init!(stm32f412g::rcc::Rcc, stm32f412g::rcc::Rcc::new());
+    // Set the RCC to 48Mhz so the USB works properly
+    rcc.set_48_mhz();
     let syscfg = static_init!(
         stm32f412g::syscfg::Syscfg,
         stm32f412g::syscfg::Syscfg::new(rcc)
@@ -397,6 +444,7 @@ pub unsafe fn main() {
         &base_peripherals.tim2,
         &base_peripherals.fsmc,
         &peripherals.trng,
+        &peripherals.usb_otg
     );
 
     // We use the default HSI 16Mhz clock
@@ -730,6 +778,40 @@ pub unsafe fn main() {
             adc_channel_5
         ),
     );
+
+        // --------------------------------------------------------------------------
+    // USB CTAP EXAMPLE
+    // --------------------------------------------------------------------------
+    // Uncomment to experiment with this.
+
+    // Create the strings we include in the USB descriptor.
+    let strings = static_init!(
+        [&str; 3],
+        [
+            "STM32", // Manufacturer
+            "F412GDISCOVERY - TockOS",  // Product
+            "serial0001",           // Serial number
+        ]
+    );
+
+    let ctap_send_buffer = static_init!([u8; 64], [0; 64]);
+    let ctap_recv_buffer = static_init!([u8; 64], [0; 64]);
+
+    //&peripherals.usb_otg.enable_clock();
+
+    let (ctap, _ctap_driver) = components::ctap::CtapComponent::new(
+        &peripherals.usb_otg,
+        0x0483, // STMicroelectronics
+        0x374b, // F412GDISCOVERY
+        strings,
+        board_kernel,
+        ctap_send_buffer,
+        ctap_recv_buffer,
+    )
+    .finalize(components::usb_ctap_component_helper!(stm32f412g::usb_otg::Usbotg));
+
+    ctap.enable();
+    ctap.attach();
 
     let stm32f412g = STM32F412GDiscovery {
         console: console,

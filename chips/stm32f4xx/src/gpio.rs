@@ -869,7 +869,7 @@ impl<'a> Pin<'a> {
         self.exti_lineid.set(lineid);
     }
 
-    fn set_mode_output_pushpull(&self) {
+    pub fn set_mode_output_pushpull(&self) {
         let port = self.ports_ref.expect("").get_port(self.pinid);
 
         match self.pinid.get_pin_number() {

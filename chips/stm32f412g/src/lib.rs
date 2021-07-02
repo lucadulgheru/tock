@@ -1,3 +1,4 @@
+#![feature(const_fn_trait_bound)]
 #![no_std]
 
 use cortexm4::generic_isr;
@@ -8,6 +9,7 @@ pub use stm32f4xx::{
 
 pub mod interrupt_service;
 pub mod stm32f412g_nvic;
+pub mod usb_otg;
 
 // STM32F412g has total of 97 interrupts
 #[cfg_attr(all(target_arch = "arm", target_os = "none"), link_section = ".irqs")]

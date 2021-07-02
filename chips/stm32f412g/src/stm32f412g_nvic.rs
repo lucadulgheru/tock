@@ -1,5 +1,7 @@
 //! Named constants for NVIC ids specific to this chip
 
+pub const OTG_FS_WKUP: u32 = 42;
+pub const OTG_FS: u32 = 67;
 pub const RNG: u32 = 80;
 pub const FPU: u32 = 81;
 pub const SPI4: u32 = 84;

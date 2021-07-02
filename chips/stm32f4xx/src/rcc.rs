@@ -1,5 +1,5 @@
-use kernel::common::registers::interfaces::{ReadWriteable, Readable};
 use kernel::common::registers::{register_bitfields, ReadWrite};
+use kernel::common::registers::interfaces::{ReadWriteable, Readable};
 use kernel::common::StaticRef;
 use kernel::ClockInterface;
 
@@ -97,44 +97,18 @@ register_bitfields![u32,
         HSION OFFSET(0) NUMBITS(1) []
     ],
     PLLCFGR [
+        /// Main PLL (PLL) division factor for I2S, DFSDM clocks
+        PLLR OFFSET(28) NUMBITS(3) [],
         /// Main PLL (PLL) division factor for USB OTG FS, SDIO and random num
         PLLQ OFFSET(24) NUMBITS(4) [],
         /// Main PLL(PLL) and audio PLL (PLLI2S) entry clock source
         PLLSRC OFFSET(22) NUMBITS(1) [],
         /// Main PLL (PLL) division factor for main system clock
-        PLLP1 OFFSET(17) NUMBITS(1) [],
-        /// Main PLL (PLL) division factor for main system clock
-        PLLP0 OFFSET(16) NUMBITS(1) [],
+        PLLP OFFSET(16) NUMBITS(2) [],
         /// Main PLL (PLL) multiplication factor for VCO
-        PLLN8 OFFSET(14) NUMBITS(1) [],
-        /// Main PLL (PLL) multiplication factor for VCO
-        PLLN7 OFFSET(13) NUMBITS(1) [],
-        /// Main PLL (PLL) multiplication factor for VCO
-        PLLN6 OFFSET(12) NUMBITS(1) [],
-        /// Main PLL (PLL) multiplication factor for VCO
-        PLLN5 OFFSET(11) NUMBITS(1) [],
-        /// Main PLL (PLL) multiplication factor for VCO
-        PLLN4 OFFSET(10) NUMBITS(1) [],
-        /// Main PLL (PLL) multiplication factor for VCO
-        PLLN3 OFFSET(9) NUMBITS(1) [],
-        /// Main PLL (PLL) multiplication factor for VCO
-        PLLN2 OFFSET(8) NUMBITS(1) [],
-        /// Main PLL (PLL) multiplication factor for VCO
-        PLLN1 OFFSET(7) NUMBITS(1) [],
-        /// Main PLL (PLL) multiplication factor for VCO
-        PLLN0 OFFSET(6) NUMBITS(1) [],
+        PLLN OFFSET(6) NUMBITS(9) [],
         /// Division factor for the main PLL (PLL) and audio PLL (PLLI2S) inpu
-        PLLM5 OFFSET(5) NUMBITS(1) [],
-        /// Division factor for the main PLL (PLL) and audio PLL (PLLI2S) inpu
-        PLLM4 OFFSET(4) NUMBITS(1) [],
-        /// Division factor for the main PLL (PLL) and audio PLL (PLLI2S) inpu
-        PLLM3 OFFSET(3) NUMBITS(1) [],
-        /// Division factor for the main PLL (PLL) and audio PLL (PLLI2S) inpu
-        PLLM2 OFFSET(2) NUMBITS(1) [],
-        /// Division factor for the main PLL (PLL) and audio PLL (PLLI2S) inpu
-        PLLM1 OFFSET(1) NUMBITS(1) [],
-        /// Division factor for the main PLL (PLL) and audio PLL (PLLI2S) inpu
-        PLLM0 OFFSET(0) NUMBITS(1) []
+        PLLM OFFSET(0) NUMBITS(6) []
     ],
     CFGR [
         /// Microcontroller clock output 2
@@ -150,19 +124,35 @@ register_bitfields![u32,
         /// HSE division factor for RTC clock
         RTCPRE OFFSET(16) NUMBITS(5) [],
         /// APB high-speed prescaler (APB2)
-        PPRE2 OFFSET(13) NUMBITS(3) [],
+        PPRE2 OFFSET(13) NUMBITS(3) [
+            DIV1 = 0b000,
+            DIV2 = 0b100,
+            DIV4 = 0b101,
+            DIV8 = 0b110,
+            DIV16 = 0b111
+        ],
         /// APB Low speed prescaler (APB1)
-        PPRE1 OFFSET(10) NUMBITS(3) [],
+        PPRE1 OFFSET(10) NUMBITS(3) [
+            DIV1 = 0b000,
+            DIV2 = 0b100,
+            DIV4 = 0b101,
+            DIV8 = 0b110,
+            DIV16 = 0b111
+        ],
         /// AHB prescaler
         HPRE OFFSET(4) NUMBITS(4) [],
         /// System clock switch status
-        SWS1 OFFSET(3) NUMBITS(1) [],
-        /// System clock switch status
-        SWS0 OFFSET(2) NUMBITS(1) [],
+        SWS OFFSET(2) NUMBITS(2) [
+            HSI = 0,
+            HSE = 1,
+            PLL = 2
+        ],
         /// System clock switch
-        SW1 OFFSET(1) NUMBITS(1) [],
-        /// System clock switch
-        SW0 OFFSET(0) NUMBITS(1) []
+        SW OFFSET(0) NUMBITS(2) [
+            HSI = 0,
+            HSE = 1,
+            PLL = 2
+        ]
     ],
     CIR [
         /// Clock security system interrupt clear
@@ -732,6 +722,96 @@ impl Rcc {
         Rcc {
             registers: RCC_BASE,
         }
+    }
+
+    pub fn set_48_mhz(&self) {
+        self.registers.apb1enr.modify(APB1ENR::PWREN::SET);
+        self.registers.apb1enr.read(APB1ENR::PWREN);
+
+        self.registers.cr.modify(CR::HSEON::SET);
+
+        while !self.registers.cr.is_set(CR::HSERDY) {
+            // TODO panic timeout
+        }
+
+        self.registers.cr.modify(CR::PLLON::CLEAR);
+
+        while self.registers.cr.is_set(CR::PLLRDY) {
+            // TODO panic timeout
+        }
+
+        self.registers.pllcfgr.modify(
+            PLLCFGR::PLLSRC::SET
+                + PLLCFGR::PLLM.val(4)
+                + PLLCFGR::PLLN.val(96)
+                + PLLCFGR::PLLP.val(2)
+                + PLLCFGR::PLLQ.val(4)
+                + PLLCFGR::PLLR.val(2),
+        );
+
+        self.registers.cr.modify(CR::PLLON::SET);
+
+        while !self.registers.cr.is_set(CR::PLLRDY) {
+            // TODO panic timeout
+        }
+
+        self.registers
+            .cfgr
+            .modify(CFGR::PPRE1::DIV16 + CFGR::PPRE2::DIV16 + CFGR::HPRE.val(0) + CFGR::SW::PLL);
+
+        while self.registers.cfgr.read(CFGR::SWS) != 2 {
+            // TODO panic timeout
+        }
+
+        self.registers
+            .cfgr
+            .modify(CFGR::PPRE1::DIV2 + CFGR::PPRE2::DIV1);
+        // TODO verify that clock is set
+    }
+
+    pub fn set_100_mhz(&self) {
+        self.registers.apb1enr.modify(APB1ENR::PWREN::SET);
+        self.registers.apb1enr.read(APB1ENR::PWREN);
+
+        self.registers.cr.modify(CR::HSEON::SET);
+
+        while !self.registers.cr.is_set(CR::HSERDY) {
+            // TODO panic timeout
+        }
+
+        self.registers.cr.modify(CR::PLLON::CLEAR);
+
+        while self.registers.cr.is_set(CR::PLLRDY) {
+            // TODO panic timeout
+        }
+
+        self.registers.pllcfgr.modify(
+            PLLCFGR::PLLSRC::SET
+                + PLLCFGR::PLLM.val(8)
+                + PLLCFGR::PLLN.val(200)
+                + PLLCFGR::PLLP.val(2)
+                + PLLCFGR::PLLQ.val(7)
+                + PLLCFGR::PLLR.val(2),
+        );
+
+        self.registers.cr.modify(CR::PLLON::SET);
+
+        while !self.registers.cr.is_set(CR::PLLRDY) {
+            // TODO panic timeout
+        }
+
+        self.registers
+            .cfgr
+            .modify(CFGR::PPRE1::DIV16 + CFGR::PPRE2::DIV16 + CFGR::HPRE.val(0) + CFGR::SW::PLL);
+
+        while self.registers.cfgr.read(CFGR::SWS) != 2 {
+            // TODO panic timeout
+        }
+
+        self.registers
+            .cfgr
+            .modify(CFGR::PPRE1::DIV2 + CFGR::PPRE2::DIV1);
+        // TODO verify that clock is set
     }
 
     fn configure_rng_clock(&self) {
