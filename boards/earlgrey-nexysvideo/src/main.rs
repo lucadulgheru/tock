@@ -12,12 +12,14 @@
 
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use capsules::virtual_hmac::VirtualMuxHmac;
+use capsules::virtual_sha::VirtualMuxSha;
 use earlgrey::chip::EarlGreyDefaultPeripherals;
 use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::common::registers::interfaces::ReadWriteable;
 use kernel::component::Component;
 use kernel::hil;
+use kernel::hil::digest::Digest;
 use kernel::hil::i2c::I2CMaster;
 use kernel::hil::led::LedHigh;
 use kernel::hil::time::Alarm;
@@ -30,10 +32,6 @@ use rv32i::csr;
 #[cfg(test)]
 mod tests;
 
-#[allow(dead_code)]
-mod aes_test;
-#[allow(dead_code)]
-mod multi_alarm_test;
 mod otbn;
 #[allow(dead_code)]
 mod tickv_test;
@@ -42,6 +40,7 @@ pub mod io;
 pub mod usb;
 
 const NUM_PROCS: usize = 4;
+const NUM_UPCALLS_IPC: usize = NUM_PROCS + 1;
 
 //
 // Actual memory for holding the active process structures. Need an empty list
@@ -63,6 +62,8 @@ static mut PLATFORM: Option<&'static EarlGreyNexysVideo> = None;
 // Test access to main loop capability
 #[cfg(test)]
 static mut MAIN_CAP: Option<&dyn kernel::capabilities::MainLoopCapability> = None;
+// Test access to alarm
+static mut ALARM: Option<&'static MuxAlarm<'static, earlgrey::timer::RvTimer<'static>>> = None;
 
 static mut CHIP: Option<
     &'static earlgrey::chip::EarlGrey<
@@ -94,7 +95,20 @@ struct EarlGreyNexysVideo {
     >,
     hmac: &'static capsules::hmac::HmacDriver<
         'static,
-        VirtualMuxHmac<'static, lowrisc::hmac::Hmac<'static>, 32>,
+        VirtualMuxHmac<
+            'static,
+            capsules::virtual_digest::VirtualMuxDigest<'static, lowrisc::hmac::Hmac<'static>, 32>,
+            32,
+        >,
+        32,
+    >,
+    sha: &'static capsules::sha::ShaDriver<
+        'static,
+        VirtualMuxSha<
+            'static,
+            capsules::virtual_digest::VirtualMuxDigest<'static, lowrisc::hmac::Hmac<'static>, 32>,
+            32,
+        >,
         32,
     >,
     lldb: &'static capsules::low_level_debug::LowLevelDebug<
@@ -113,6 +127,7 @@ impl Platform for EarlGreyNexysVideo {
         match driver_num {
             capsules::led::DRIVER_NUM => f(Some(self.led)),
             capsules::hmac::DRIVER_NUM => f(Some(self.hmac)),
+            capsules::sha::DRIVER_NUM => f(Some(self.sha)),
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::console::DRIVER_NUM => f(Some(self.console)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
@@ -189,6 +204,7 @@ unsafe fn setup() -> (
 
     let gpio = components::gpio::GpioComponent::new(
         board_kernel,
+        capsules::gpio::DRIVER_NUM,
         components::gpio_component_helper!(
             earlgrey::gpio::GpioPin,
             0 => &peripherals.gpio_port[0],
@@ -214,6 +230,8 @@ unsafe fn setup() -> (
     );
     hil::time::Alarm::set_alarm_client(hardware_alarm, mux_alarm);
 
+    ALARM = Some(mux_alarm);
+
     // Alarm
     let virtual_alarm_user = static_init!(
         VirtualMuxAlarm<'static, earlgrey::timer::RvTimer>,
@@ -227,7 +245,7 @@ unsafe fn setup() -> (
         capsules::alarm::AlarmDriver<'static, VirtualMuxAlarm<'static, earlgrey::timer::RvTimer>>,
         capsules::alarm::AlarmDriver::new(
             virtual_alarm_user,
-            board_kernel.create_grant(&memory_allocation_cap)
+            board_kernel.create_grant(capsules::alarm::DRIVER_NUM, &memory_allocation_cap)
         )
     );
     hil::time::Alarm::set_alarm_client(virtual_alarm_user, alarm);
@@ -251,33 +269,81 @@ unsafe fn setup() -> (
     csr::CSR.mstatus.modify(csr::mstatus::mstatus::mie::SET);
 
     // Setup the console.
-    let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
+    let console = components::console::ConsoleComponent::new(
+        board_kernel,
+        capsules::console::DRIVER_NUM,
+        uart_mux,
+    )
+    .finalize(());
     // Create the debugger object that handles calls to `debug!()`.
     components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
 
-    let lldb = components::lldb::LowLevelDebugComponent::new(board_kernel, uart_mux).finalize(());
+    let lldb = components::lldb::LowLevelDebugComponent::new(
+        board_kernel,
+        capsules::low_level_debug::DRIVER_NUM,
+        uart_mux,
+    )
+    .finalize(());
 
+    let mux_digest = components::digest::DigestMuxComponent::new(&peripherals.hmac).finalize(
+        components::digest_mux_component_helper!(lowrisc::hmac::Hmac, 32),
+    );
+
+    let digest_key_buffer = static_init!([u8; 32], [0; 32]);
+
+    let digest = components::digest::DigestComponent::new(&mux_digest, digest_key_buffer).finalize(
+        components::digest_component_helper!(lowrisc::hmac::Hmac, 32,),
+    );
+
+    peripherals.hmac.set_client(digest);
+
+    let hmac_key_buffer = static_init!([u8; 32], [0; 32]);
     let hmac_data_buffer = static_init!([u8; 64], [0; 64]);
     let hmac_dest_buffer = static_init!([u8; 32], [0; 32]);
 
-    let mux_hmac = components::hmac::HmacMuxComponent::new(&peripherals.hmac).finalize(
-        components::hmac_mux_component_helper!(lowrisc::hmac::Hmac, 32),
+    let mux_hmac = components::hmac::HmacMuxComponent::new(digest).finalize(
+        components::hmac_mux_component_helper!(capsules::virtual_digest::VirtualMuxDigest<lowrisc::hmac::Hmac, 32>, 32),
     );
 
     let hmac = components::hmac::HmacComponent::new(
         board_kernel,
+        capsules::hmac::DRIVER_NUM,
         &mux_hmac,
+        hmac_key_buffer,
         hmac_data_buffer,
         hmac_dest_buffer,
     )
-    .finalize(components::hmac_component_helper!(lowrisc::hmac::Hmac, 32,));
+    .finalize(components::hmac_component_helper!(
+        capsules::virtual_digest::VirtualMuxDigest<lowrisc::hmac::Hmac, 32>,
+        32,
+    ));
+
+    digest.set_hmac_client(hmac);
+
+    let sha_data_buffer = static_init!([u8; 64], [0; 64]);
+    let sha_dest_buffer = static_init!([u8; 32], [0; 32]);
+
+    let mux_sha = components::sha::ShaMuxComponent::new(digest).finalize(
+        components::sha_mux_component_helper!(capsules::virtual_digest::VirtualMuxDigest<lowrisc::hmac::Hmac, 32>, 32),
+    );
+
+    let sha = components::sha::ShaComponent::new(
+        board_kernel,
+        capsules::sha::DRIVER_NUM,
+        &mux_sha,
+        sha_data_buffer,
+        sha_dest_buffer,
+    )
+    .finalize(components::sha_component_helper!(capsules::virtual_digest::VirtualMuxDigest<lowrisc::hmac::Hmac, 32>, 32));
+
+    digest.set_sha_client(sha);
 
     let i2c_master = static_init!(
         capsules::i2c_master::I2CMasterDriver<'static, lowrisc::i2c::I2c<'static>>,
         capsules::i2c_master::I2CMasterDriver::new(
             &peripherals.i2c0,
             &mut capsules::i2c_master::BUF,
-            board_kernel.create_grant(&memory_allocation_cap)
+            board_kernel.create_grant(capsules::i2c_master::DRIVER_NUM, &memory_allocation_cap)
         )
     );
 
@@ -375,6 +441,7 @@ unsafe fn setup() -> (
             console: console,
             alarm: alarm,
             hmac,
+            sha,
             lldb: lldb,
             i2c_master,
         }
@@ -470,7 +537,7 @@ pub unsafe fn main() {
         board_kernel.kernel_loop(
             earlgrey_nexysvideo,
             chip,
-            None::<&kernel::ipc::IPC<NUM_PROCS>>,
+            None::<&kernel::ipc::IPC<NUM_PROCS, NUM_UPCALLS_IPC>>,
             scheduler,
             &main_loop_cap,
         );
